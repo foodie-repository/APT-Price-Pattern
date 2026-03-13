@@ -5,10 +5,14 @@ import csv
 from dataclasses import dataclass
 from pathlib import Path
 
+import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
-INPUT_CSV = ROOT / "04_결과/01_리포트_codex/06_예측점수_20260313_codex_시군구.csv"
-OUTPUT_CSV = ROOT / "04_결과/01_리포트_codex/05_투자검토대상군_20260313_codex_시군구.csv"
+from human_overrides import apply_human_overrides
+
+
+ROOT = Path(__file__).resolve().parents[2]
+INPUT_CSV = ROOT / "04_결과/01_리포트_codex/06_예측검증/06_예측점수_20260313_codex_시군구.csv"
+OUTPUT_CSV = ROOT / "04_결과/01_리포트_codex/05_투자검토/05_투자검토대상군_20260313_codex_시군구.csv"
 VALIDATION_CSV = ROOT / "02_데이터/02_참조/투자검토대상군_검증셋_20260313.csv"
 
 GATE_FIELDS = [
@@ -19,6 +23,23 @@ GATE_FIELDS = [
     "사람검증셋메모",
     "점수요약",
 ]
+
+DISPLAY_TEXT_REPLACEMENTS = [
+    ("우선검토", "우선 매수 검토"),
+    ("우선 검토", "우선 매수 검토"),
+    ("판단보류", "판단 보류"),
+    ("전세지지", "전세가율"),
+    ("임차 지지 강화", "임차 수요 기반 개선"),
+    ("임차 지지와", "임차 수요 기반과"),
+    ("임차 지지", "임차 수요 기반"),
+    ("공급 압박", "공급 부담"),
+]
+
+VALIDATION_VERDICT_DISPLAY = {
+    "우선검토": "우선 매수 검토",
+    "판단보류": "판단 보류",
+    "제외우선": "즉시 제외 우선",
+}
 
 
 @dataclass
@@ -58,6 +79,13 @@ def to_float(row: dict[str, str], key: str) -> float:
     return float(value)
 
 
+def normalize_display_text(value: str) -> str:
+    text = value
+    for before, after in DISPLAY_TEXT_REPLACEMENTS:
+        text = text.replace(before, after)
+    return text
+
+
 def classify(row: dict[str, str], validation: ValidationEntry | None) -> tuple[str, str, str]:
     up = to_float(row, "상승확률점수")
     fit = to_float(row, "투자적합성점수")
@@ -67,32 +95,33 @@ def classify(row: dict[str, str], validation: ValidationEntry | None) -> tuple[s
     invest_ok = row.get("투자검토가능") == "예"
     low_conf = row.get("신뢰도낮음") == "예"
     exclude_reason = row.get("제외사유", "").strip()
+    validation_memo = normalize_display_text(validation.memo) if validation else ""
 
     if validation and validation.verdict == "제외우선":
         return (
             "즉시 제외",
-            f"사람 검증셋에서 제외우선으로 표시됨. {validation.memo}".strip(),
-            "거래 회복, 임차 지지, 공급 압박 완화가 실제로 확인되면 재검토",
+            f"사람 검증셋에서 즉시 제외 우선으로 표시됨. {validation_memo}".strip(),
+            "거래 회복, 임차 수요 기반 개선, 공급 부담 완화가 실제로 확인되면 재검토",
         )
     if validation and validation.verdict == "우선검토":
         return (
             "우선 검토",
-            f"사람 검증셋에서 우선검토로 표시됨. {validation.memo}".strip(),
+            f"사람 검증셋에서 우선 매수 검토로 표시됨. {validation_memo}".strip(),
             "실거래 흐름과 실제 매수 가능 단지를 함께 점검",
         )
     if validation and validation.verdict == "판단보류":
         return (
             "판단 보류",
-            f"사람 검증셋에서 판단보류로 표시됨. {validation.memo}".strip(),
+            f"사람 검증셋에서 판단 보류로 표시됨. {validation_memo}".strip(),
             "추가 데이터와 현재 시장 체감 지표를 확인한 뒤 재판정",
         )
 
     if not invest_ok:
-        reason = exclude_reason or "투자 검토 대상군 게이트를 통과하지 못함"
+        reason = normalize_display_text(exclude_reason) or "투자 검토 대상군 게이트를 통과하지 못함"
         if low_conf:
             revisit = "거래량과 비교 단지 표본이 쌓이면 재검토"
         else:
-            revisit = "임차 지지와 공급 압박 완화가 확인되면 재검토"
+            revisit = "임차 수요 기반과 공급 부담 완화가 확인되면 재검토"
         return ("즉시 제외", reason, revisit)
 
     if low_conf and fit < 55:
@@ -129,10 +158,10 @@ def classify(row: dict[str, str], validation: ValidationEntry | None) -> tuple[s
             )
         else:
             reason = (
-                f"투자적합성({fit:.1f})은 높지만 우선 검토 기준에는 조금 못 미쳐 "
+                f"투자적합성({fit:.1f})은 높지만 우선 매수 검토 후보군 기준에는 조금 못 미쳐 "
                 "한 단계 낮은 검토군으로 둠"
             )
-        revisit = "가격 조정, 거래 회복, 임차 지지 강화가 보이면 상향 검토"
+        revisit = "가격 조정, 거래 회복, 임차 수요 기반 개선이 보이면 상향 검토"
         return ("판단 보류", reason, revisit)
 
     if catalyst >= 70 and heat < 70:
@@ -144,7 +173,7 @@ def classify(row: dict[str, str], validation: ValidationEntry | None) -> tuple[s
 
     return (
         "판단 보류",
-        f"방향성({up:.1f}) 또는 투자적합성({fit:.1f})이 우선 검토 기준에는 부족하지만 즉시 제외 수준은 아님",
+        f"방향성({up:.1f}) 또는 투자적합성({fit:.1f})이 우선 매수 검토 후보군 기준에는 부족하지만 즉시 제외 수준은 아님",
         "다음 1~2개 분기 거래·임차·공급 변화를 확인 후 재판정",
     )
 
@@ -191,12 +220,16 @@ def main() -> None:
 
         new_row = strip_existing_gate_fields(row)
         new_row["투자검토분류"] = tier
-        new_row["투자검토분류근거"] = reason
-        new_row["재검토조건"] = revisit
-        new_row["사람검증셋판정"] = validation.verdict if validation else ""
-        new_row["사람검증셋메모"] = validation.memo if validation else ""
+        new_row["투자검토분류근거"] = normalize_display_text(reason)
+        new_row["재검토조건"] = normalize_display_text(revisit)
+        new_row["사람검증셋판정"] = VALIDATION_VERDICT_DISPLAY.get(validation.verdict, validation.verdict) if validation else ""
+        new_row["사람검증셋메모"] = normalize_display_text(validation.memo) if validation else ""
         new_row["점수요약"] = build_highlight(row)
         output_rows.append(new_row)
+
+    output_df = pd.DataFrame(output_rows)
+    output_df = apply_human_overrides(output_df, scope="gate")
+    output_rows = output_df.to_dict(orient="records")
 
     priority_order = {"우선 검토": 0, "판단 보류": 1, "즉시 제외": 2}
     output_rows.sort(

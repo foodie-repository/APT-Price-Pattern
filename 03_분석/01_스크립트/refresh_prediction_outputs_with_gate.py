@@ -5,15 +5,19 @@ from pathlib import Path
 
 import pandas as pd
 
+from human_overrides import apply_human_overrides
 
-ROOT = Path(__file__).resolve().parents[1]
+
+ROOT = Path(__file__).resolve().parents[2]
 REPORT_DIR = ROOT / "04_결과/01_리포트_codex"
-CURRENT_PATH = REPORT_DIR / "06_예측점수_20260313_codex_시군구.csv"
-METRICS_PATH = REPORT_DIR / "06_백테스트성능_20260313_codex.csv"
-CALIBRATION_PATH = REPORT_DIR / "06_점수버킷보정_20260313_codex.csv"
-SIMILAR_PATH = REPORT_DIR / "06_유사국면_20260313_codex.csv"
-GATE_PATH = REPORT_DIR / "05_투자검토대상군_20260313_codex_시군구.csv"
-REPORT_PATH = REPORT_DIR / "06_예측및검증_20260313_codex.md"
+PRED_DIR = REPORT_DIR / "06_예측검증"
+INVEST_DIR = REPORT_DIR / "05_투자검토"
+CURRENT_PATH = PRED_DIR / "06_예측점수_20260313_codex_시군구.csv"
+METRICS_PATH = PRED_DIR / "06_백테스트성능_20260313_codex.csv"
+CALIBRATION_PATH = PRED_DIR / "06_점수버킷보정_20260313_codex.csv"
+SIMILAR_PATH = PRED_DIR / "06_유사국면_20260313_codex.csv"
+GATE_PATH = INVEST_DIR / "05_투자검토대상군_20260313_codex_시군구.csv"
+REPORT_PATH = PRED_DIR / "06_예측및검증_20260313_codex.md"
 
 REVIEW_GATE_COLUMNS = [
     "투자검토분류",
@@ -44,7 +48,48 @@ def df_to_code_table(df: pd.DataFrame) -> str:
     if df.empty:
         return "```text\n(비어 있음)\n```"
     show = df.copy()
+    show = normalize_display_table(show)
     return "```text\n" + show.to_string(index=False) + "\n```"
+
+
+DISPLAY_COLUMN_MAP = {
+    "저평가가능점수": "가격반영부족가능성점수",
+    "촉매점수": "변화계기점수",
+    "과열가능점수": "과열가능성점수",
+    "미래입주압력_18개월_pct": "기존세대수대비_향후18개월입주예정물량_pct",
+    "completed_unsold_ratio_pct": "준공후미분양비중_pct",
+    "median_peer_gap_pct": "동급생활권가격괴리율_pct",
+    "저평가가능비중_pct": "가격반영부족가능비중_pct",
+    "recent_12m_trades": "최근12개월거래량",
+    "signal_complex_count": "비교단지수",
+}
+
+DISPLAY_TEXT_REPLACEMENTS = [
+    ("우선검토", "우선 매수 검토"),
+    ("우선 검토", "우선 매수 검토"),
+    ("임차 지지 강화", "임차 수요 기반 개선"),
+    ("임차 지지와", "임차 수요 기반과"),
+    ("임차 지지", "임차 수요 기반"),
+    ("전세지지", "전세가율"),
+    ("공급 압박", "공급 부담"),
+]
+
+
+def normalize_display_text(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    text = value
+    for before, after in DISPLAY_TEXT_REPLACEMENTS:
+        text = text.replace(before, after)
+    return text
+
+
+def normalize_display_table(df: pd.DataFrame) -> pd.DataFrame:
+    show = df.rename(columns=DISPLAY_COLUMN_MAP).copy()
+    object_cols = show.select_dtypes(include=["object", "string"]).columns
+    for col in object_cols:
+        show[col] = show[col].map(normalize_display_text)
+    return show
 
 
 def build_candidate_reason(row: pd.Series, kind: str) -> str:
@@ -54,11 +99,11 @@ def build_candidate_reason(row: pd.Series, kind: str) -> str:
         if pd.notna(row.get("trade_recovery_pct")) and row["trade_recovery_pct"] >= 20:
             reasons.append(f"거래회복 {row['trade_recovery_pct']:.1f}%")
         if pd.notna(row.get("jeonse_ratio_pct")) and row["jeonse_ratio_pct"] >= 80:
-            reasons.append(f"전세지지 {row['jeonse_ratio_pct']:.1f}%")
+            reasons.append(f"전세가율 {row['jeonse_ratio_pct']:.1f}%")
         if pd.notna(row.get("미래입주압력_18개월_pct")) and row["미래입주압력_18개월_pct"] <= 2:
-            reasons.append(f"입주압력 낮음 {row['미래입주압력_18개월_pct']:.1f}%")
+            reasons.append(f"입주예정 물량 비율 낮음 {row['미래입주압력_18개월_pct']:.1f}%")
         if pd.notna(row.get("저평가가능점수")) and row["저평가가능점수"] >= 65:
-            reasons.append("저평가 신호")
+            reasons.append("가격 반영 부족 신호")
         if pd.notna(row.get("과열가능점수")) and row["과열가능점수"] < 40:
             reasons.append("과열 낮음")
     elif kind == "undervalued":
@@ -67,14 +112,14 @@ def build_candidate_reason(row: pd.Series, kind: str) -> str:
         if pd.notna(row.get("jeonse_ratio_pct")) and row["jeonse_ratio_pct"] >= 80:
             reasons.append(f"전세가율 높음 {row['jeonse_ratio_pct']:.1f}%")
         if pd.notna(row.get("촉매점수")) and row["촉매점수"] >= 70:
-            reasons.append("촉매 양호")
+            reasons.append("변화 계기 양호")
         if pd.notna(row.get("미래입주압력_18개월_pct")) and row["미래입주압력_18개월_pct"] <= 2:
             reasons.append("공급 부담 낮음")
     elif kind == "observe":
         if pd.notna(row.get("투자적합성점수")) and row["투자적합성점수"] >= 80:
             reasons.append(f"투자적합성 높음 {row['투자적합성점수']:.1f}")
         if pd.notna(row.get("촉매점수")) and row["촉매점수"] >= 70:
-            reasons.append(f"촉매 강함 {row['촉매점수']:.1f}")
+            reasons.append(f"변화 계기 강함 {row['촉매점수']:.1f}")
         if pd.notna(row.get("과열가능점수")) and row["과열가능점수"] >= 65:
             reasons.append(f"과열 경계 {row['과열가능점수']:.1f}")
         if pd.notna(row.get("상승확률점수")) and row["상승확률점수"] < 55:
@@ -83,11 +128,11 @@ def build_candidate_reason(row: pd.Series, kind: str) -> str:
         if pd.notna(row.get("과열가능점수")) and row["과열가능점수"] >= 70:
             reasons.append(f"과열 {row['과열가능점수']:.1f}")
         if pd.notna(row.get("미래입주압력_18개월_pct")) and row["미래입주압력_18개월_pct"] >= 5:
-            reasons.append(f"입주압력 {row['미래입주압력_18개월_pct']:.1f}%")
+            reasons.append(f"입주예정 물량 비율 {row['미래입주압력_18개월_pct']:.1f}%")
         if pd.notna(row.get("completed_unsold_ratio_pct")) and row["completed_unsold_ratio_pct"] >= 60:
             reasons.append(f"준공후미분양비중 {row['completed_unsold_ratio_pct']:.1f}%")
         if pd.notna(row.get("jeonse_ratio_pct")) and row["jeonse_ratio_pct"] < 70:
-            reasons.append(f"전세지지 약함 {row['jeonse_ratio_pct']:.1f}%")
+            reasons.append(f"전세가율 낮음 {row['jeonse_ratio_pct']:.1f}%")
 
     if not reasons:
         if kind == "observe":
@@ -112,6 +157,7 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]
 
     current = drop_existing_review_gate_columns(current)
     current = current.merge(gate, on=["시도", "시군구"], how="left")
+    current = apply_human_overrides(current, scope="prediction")
     return current, metrics, calibration, similar
 
 
@@ -218,6 +264,7 @@ def render_report(current: pd.DataFrame, metrics: pd.DataFrame, calibration: pd.
 
 - 이 문서는 `3. 매매`, `4. 임차`, `5. 정책`, `6. 공급 프록시`, `7. 투자 검토 대상군 및 투자 적합성 보정` 결과를 합쳐 시군구 기준 `향후 6개월 대표가격 방향성`을 다시 좁혀보는 단계다.
 - 이번 버전의 핵심은 방향성 점수만으로 후보를 뽑지 않고, 단계 7의 `우선 검토 / 판단 보류 / 즉시 제외` 게이트를 먼저 적용한 뒤 예측 결과를 읽는 것이다.
+- 공개 보고서에서는 단계 7의 `우선 검토`를 `우선 매수 검토 후보군`으로 번역해 읽는다.
 - 따라서 이 문서는 단순 점수표가 아니라 `실제 투자 검토 가능성까지 반영한 shortlist 문서`다.
 
 ## 1. 예측 기준
@@ -243,7 +290,7 @@ def render_report(current: pd.DataFrame, metrics: pd.DataFrame, calibration: pd.
 {similar_lines}
 
 - 해석:
-  - 현재는 `수도권 상대 강세`, `지방 비핵심 공급 부담`, `전세 지지의 지역 차별화`가 같이 나타나는 구간이다.
+  - 현재는 `수도권 상대 강세`, `지방 비핵심 공급 부담`, `임차 수요 기반의 지역 차별화`가 같이 나타나는 구간이다.
   - 단순 전면 상승장이 아니라 `확산과 선별이 동시에 진행되는 회복/확산 혼합 구간`으로 보는 편이 맞다.
 
 ## 3. 백테스트 방식
@@ -274,25 +321,25 @@ def render_report(current: pd.DataFrame, metrics: pd.DataFrame, calibration: pd.
 
 ### 5.1 상승 후보
 
-- 아래 표는 단계 7에서 `우선 검토`로 분류된 지역 중, `예측분류=상승`이고 과열이 과하지 않은 지역만 포함한다.
+- 아래 표는 단계 7 내부 라벨인 `우선 검토`로 분류된 지역 중, 공개 보고서 기준 `우선 매수 검토`로 먼저 볼 만한 지역만 포함한다.
 
 {rising_text}
 
 ### 5.2 저평가 가능 후보
 
-- `저평가`는 단순 저가가 아니라, `우선 검토`를 통과한 지역 중 상대적으로 덜 반영된 후보를 뜻한다.
+- `저평가`는 단순 저가가 아니라, `우선 매수 검토 후보군`으로 좁힌 지역 중 상대적으로 덜 반영된 후보를 뜻한다.
 
 {undervalued_text}
 
 ### 5.3 관찰 후보
 
-- 관찰 후보는 `판단 보류` 군 중, 질은 좋지만 지금 당장 공격적으로 들어가기보다 추가 확인이 필요한 지역이다.
+- 관찰 후보는 `판단 보류` 군 중, 질은 좋지만 지금 당장 매수 우선순위를 높이기보다 추가 확인이 필요한 지역이다.
 
 {observe_text}
 
 ### 5.4 보수·회피 후보
 
-- 보수·회피 후보는 `판단 보류` 군 안에서도 특히 과열, 공급 압력, 전세 지지 약화가 커서 더 보수적으로 봐야 하는 지역이다.
+- 보수·회피 후보는 `판단 보류` 군 안에서도 특히 과열, 공급 부담, 임차 수요 기반 약화가 커서 더 보수적으로 봐야 하는 지역이다.
 
 {avoid_text}
 
@@ -333,7 +380,7 @@ def render_report(current: pd.DataFrame, metrics: pd.DataFrame, calibration: pd.
   - 상위 후보에서 거래 급감과 전세 약세가 동시에 발생
   - 고부담 지역에서 입주 직전 호가 급락과 가격기준 급매 증가
 - 투자자 대응:
-  - `우선 검토` 후보에서 생활권과 단지 상품성까지 내려가 shortlist를 더 좁힌다.
+  - `우선 매수 검토` 후보에서 생활권과 단지 상품성까지 내려가 shortlist를 더 좁힌다.
 
 ### 보합 시나리오
 

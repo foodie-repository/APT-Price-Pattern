@@ -10,12 +10,15 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[2]
 DB_PATH = Path("/Volumes/T9/duckdb-analytics/db/apartment.duckdb")
 OUT_DIR = ROOT / "04_결과/01_리포트_codex"
-LABEL_PATH = OUT_DIR / "01_매매시장_행동라벨_20260314_codex.csv"
-PRED_PATH = OUT_DIR / "06_예측점수_20260313_codex_시군구.csv"
+SALE_DIR = OUT_DIR / "01_매매시장"
+LEASE_DIR = OUT_DIR / "02_임차시장"
+PRED_DIR = OUT_DIR / "06_예측검증"
+LABEL_PATH = SALE_DIR / "01_매매시장_행동라벨_20260314_codex.csv"
+PRED_PATH = PRED_DIR / "06_예측점수_20260313_codex_시군구.csv"
 
-SIMILAR_PATH = OUT_DIR / "02_임차시장_유사국면비교_20260314_codex.csv"
-VALIDATION_PATH = OUT_DIR / "02_임차시장_행동라벨임차검증_20260314_codex.csv"
-TYPE_PATH = OUT_DIR / "02_임차시장_유형분류_20260314_codex.csv"
+SIMILAR_PATH = LEASE_DIR / "02_임차시장_유사국면비교_20260314_codex.csv"
+VALIDATION_PATH = LEASE_DIR / "02_임차시장_행동라벨임차검증_20260314_codex.csv"
+TYPE_PATH = LEASE_DIR / "02_임차시장_유형분류_20260314_codex.csv"
 
 
 def shift_ym(ym: int, delta: int) -> int:
@@ -338,7 +341,7 @@ def build_type_frame(validation: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> None:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    LEASE_DIR.mkdir(parents=True, exist_ok=True)
     with duckdb.connect(str(DB_PATH), read_only=True) as con:
         similar = build_similarity_frame(con)
         validation = build_validation_frame(con)

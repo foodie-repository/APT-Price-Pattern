@@ -12,14 +12,18 @@ DB_PATH = Path("/Volumes/T9/duckdb-analytics/db/apartment.duckdb")
 OUT_DIR = ROOT / "04_결과" / "01_리포트_codex"
 GRADE_PATH = ROOT / "02_데이터" / "02_참조" / "수도권_매매_급지표_시군구_20260311.csv"
 TOHUGA_REF_PATH = ROOT / "02_데이터" / "02_참조" / "토지거래허가구역_활성참조_20260313.csv"
-SALE_ACTION_PATH = OUT_DIR / "01_매매시장_행동라벨_20260314_codex.csv"
-LEASE_VALIDATION_PATH = OUT_DIR / "02_임차시장_행동라벨임차검증_20260314_codex.csv"
-INVESTMENT_PATH = OUT_DIR / "05_투자검토대상군_20260313_codex_시군구.csv"
+SALE_DIR = OUT_DIR / "01_매매시장"
+LEASE_DIR = OUT_DIR / "02_임차시장"
+POLICY_DIR = OUT_DIR / "03_정책영향"
+INVEST_DIR = OUT_DIR / "05_투자검토"
+SALE_ACTION_PATH = SALE_DIR / "01_매매시장_행동라벨_20260314_codex.csv"
+LEASE_VALIDATION_PATH = LEASE_DIR / "02_임차시장_행동라벨임차검증_20260314_codex.csv"
+INVESTMENT_PATH = INVEST_DIR / "05_투자검토대상군_20260313_codex_시군구.csv"
 
-WINDOW_OUT = OUT_DIR / "03_정책국면_단기중기비교_20260314_codex.csv"
-CONTROL_OUT = OUT_DIR / "03_정책_2순위대조군_20260314_codex.csv"
-TOHUGA_OUT = OUT_DIR / "03_토허현재해석_20260314_codex.csv"
-RECOVERY_OUT = OUT_DIR / "03_정책후회복후보_20260314_codex.csv"
+WINDOW_OUT = POLICY_DIR / "03_정책국면_단기중기비교_20260314_codex.csv"
+CONTROL_OUT = POLICY_DIR / "03_정책_2순위대조군_20260314_codex.csv"
+TOHUGA_OUT = POLICY_DIR / "03_토허현재해석_20260314_codex.csv"
+RECOVERY_OUT = POLICY_DIR / "03_정책후회복후보_20260314_codex.csv"
 
 
 def add_months(ym: int, n: int) -> int:
@@ -288,11 +292,27 @@ def build_tohuga_context(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     return out[columns].sort_values(["시도", "시군구", "세부구역명"]).reset_index(drop=True)
 
 
+def build_active_tohuga_lookup() -> tuple[set[tuple[str, str]], set[str]]:
+    ref = pd.read_csv(TOHUGA_REF_PATH, encoding="utf-8-sig")
+    active = ref[ref["현재판정"] == "활성확인"].copy()
+    specific: set[tuple[str, str]] = set()
+    whole_sido: set[str] = set()
+    for row in active.itertuples(index=False):
+        sigungu_value = str(row.시군구)
+        if "전체" in sigungu_value:
+            whole_sido.add(row.시도)
+            continue
+        for sigungu in [part.strip() for part in sigungu_value.split(";") if part.strip()]:
+            specific.add((row.시도, sigungu))
+    return specific, whole_sido
+
+
 def build_recovery_candidates(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     sale_action = pd.read_csv(SALE_ACTION_PATH, encoding="utf-8-sig")
     lease_validation = pd.read_csv(LEASE_VALIDATION_PATH, encoding="utf-8-sig")
     investment = pd.read_csv(INVESTMENT_PATH, encoding="utf-8-sig")
     stock_unsold = build_stock_unsold_frame(con)
+    tohuga_specific, tohuga_whole_sido = build_active_tohuga_lookup()
 
     investment["broad"] = investment["시군구_상위"].fillna(investment["시군구"])
     merged = sale_action.merge(
@@ -322,40 +342,113 @@ def build_recovery_candidates(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         suffixes=("_sale", "_cand"),
     ).merge(stock_unsold[["시도", "broad", "completed_unsold", "completed_unsold_ratio_pct"]], on=["시도", "broad"], how="left")
 
+    if "정책메모_cand" in merged.columns:
+        merged["정책메모"] = merged["정책메모_cand"].fillna(merged.get("정책메모_sale"))
+
+    merged["토허활성여부"] = merged.apply(
+        lambda row: "예"
+        if ((row["시도"], row["시군구"]) in tohuga_specific) or (row["시도"] in tohuga_whole_sido)
+        else "아니오",
+        axis=1,
+    )
+
     low_completed_unsold = merged["completed_unsold_ratio_pct"].fillna(0) <= 0.08
+    supply_risk = merged["정책메모"].fillna("").str.contains("공급 부담")
+    direct_reg_risk = merged["토허활성여부"] == "예"
+    monthly_caution = merged["월세화경계"] == "예"
+    lease_lead = merged["임차선행"] == "예"
+    price_change = merged["price_12m_change_pct"]
+    trade_recovery = merged["trade_recovery_pct_sale"].fillna(merged["trade_recovery_pct_cand"])
+    non_tohuga_monthly_observation = (
+        monthly_caution
+        & (~direct_reg_risk)
+        & low_completed_unsold
+        & (~supply_risk)
+        & (lease_lead | ((price_change > 0) & (trade_recovery > 0)))
+    )
+
     merged["정책후판정"] = "정책 중립"
     merged.loc[
         (merged["심화행동라벨"] == "우선 매수 검토")
         & (merged["임차수요기반양호"] == "예")
         & (merged["월세화경계"] != "예")
-        & low_completed_unsold,
+        & low_completed_unsold
+        & (~direct_reg_risk),
         "정책후판정",
     ] = "우선 회복 후보"
     merged.loc[
         (merged["정책후판정"] == "정책 중립")
         & (merged["심화행동라벨"].isin(["관찰 유지", "보수 접근"]))
-        & ((merged["임차수요기반양호"] == "예") | (merged["임차선행"] == "예"))
-        & (merged["월세화경계"] != "예")
-        & low_completed_unsold,
+        & low_completed_unsold
+        & (~supply_risk)
+        & (~direct_reg_risk)
+        & (
+            ((merged["임차수요기반양호"] == "예") & (~monthly_caution))
+            | ((lease_lead) & low_completed_unsold)
+            | non_tohuga_monthly_observation
+        ),
         "정책후판정",
     ] = "정책 민감 관찰 후보"
     merged.loc[
         (merged["정책후판정"] == "정책 중립")
+        & monthly_caution
+        & (~direct_reg_risk)
+        & low_completed_unsold
+        & (~supply_risk),
+        "정책후판정",
+    ] = "정책 해석 주의"
+    merged.loc[
+        (merged["정책후판정"] == "정책 중립")
         & (
-            (merged["월세화경계"] == "예")
-            | merged["정책메모"].fillna("").str.contains("공급 부담")
+            supply_risk
             | (~low_completed_unsold)
+            | direct_reg_risk
             | (merged["심화행동라벨"] == "회피")
         ),
         "정책후판정",
     ] = "정책 리스크 경계"
 
+    def build_policy_subtype(row: pd.Series) -> str:
+        price_change = row.get("price_12m_change_pct")
+        trade_recovery = row.get("trade_recovery_pct_sale")
+        if pd.isna(trade_recovery):
+            trade_recovery = row.get("trade_recovery_pct_cand")
+        if row.get("정책후판정") == "정책 민감 관찰 후보":
+            if row.get("월세화경계") == "예" and row.get("임차선행") == "예":
+                return "비토허 투자수요·임차선행 관찰형"
+            if row.get("월세화경계") == "예":
+                return "비토허 투자수요 유입 관찰형"
+            if row.get("임차선행") == "예":
+                return "임차 선행 관찰형"
+            return "정책 민감 관찰형"
+        if row.get("정책후판정") == "정책 해석 주의":
+            if pd.notna(price_change) and price_change > 0 and pd.notna(trade_recovery) and trade_recovery <= 0:
+                return "가격 반영 대비 거래 회복 지연형"
+            if pd.notna(price_change) and price_change > 0 and row.get("월세화경계") == "예":
+                return "가격 선반영 후 임차 구조 점검형"
+            return "월세화 해석 주의형"
+        if row.get("정책후판정") != "정책 리스크 경계":
+            return ""
+        if row.get("토허활성여부") == "예":
+            return "직접 규제 영향형"
+        if isinstance(row.get("정책메모"), str) and "공급 부담" in row["정책메모"]:
+            return "공급 부담 우선 점검형"
+        if pd.notna(row.get("completed_unsold_ratio_pct")) and row["completed_unsold_ratio_pct"] >= 0.2:
+            return "미분양·월세화 동시 점검형"
+        if row.get("심화행동라벨") == "회피":
+            return "시장 규모·출구 점검형"
+        return "정책 리스크 점검형"
+
     def build_note(row: pd.Series) -> str:
         parts: list[str] = []
+        if row.get("정책세부유형"):
+            parts.append(str(row["정책세부유형"]))
         if pd.notna(row.get("completed_unsold_ratio_pct")):
             parts.append(f"준공후미분양비율 {row['completed_unsold_ratio_pct']:.3f}%")
         if isinstance(row.get("정책메모"), str) and row["정책메모"]:
             parts.append(row["정책메모"])
+        if row.get("토허활성여부") == "예":
+            parts.append("토허 활성")
         if row.get("임차수요기반양호") == "예":
             parts.append("임차 수요 기반 양호")
         if row.get("임차선행") == "예":
@@ -364,9 +457,11 @@ def build_recovery_candidates(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
             parts.append("월세화 경계")
         return ", ".join(parts)
 
+    merged["정책세부유형"] = merged.apply(build_policy_subtype, axis=1)
     merged["정책판정메모"] = merged.apply(build_note, axis=1)
     columns = [
         "정책후판정",
+        "정책세부유형",
         "심화행동라벨",
         "시도",
         "시군구",
@@ -374,6 +469,7 @@ def build_recovery_candidates(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         "상승확률점수_cand",
         "투자적합성점수_cand",
         "정책메모",
+        "토허활성여부",
         "임차수요기반양호",
         "월세화경계",
         "임차선행",
@@ -396,7 +492,7 @@ def build_recovery_candidates(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
 
 
 def main() -> None:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    POLICY_DIR.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH), read_only=True)
     grade = pd.read_csv(GRADE_PATH, encoding="utf-8-sig")
     monthly = build_monthly_metrics(con)

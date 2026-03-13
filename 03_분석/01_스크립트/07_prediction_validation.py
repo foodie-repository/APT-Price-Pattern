@@ -9,10 +9,10 @@ import pandas as pd
 
 
 DB_PATH = "/Volumes/T9/duckdb-analytics/db/apartment.duckdb"
-OUTPUT_DIR = Path("04_결과/01_리포트_codex")
+OUTPUT_DIR = Path("04_결과/01_리포트_codex/06_예측검증")
 REPORT_DATE = "20260313"
 REPORT_TAG = "codex"
-REVIEW_GATE_PATH = OUTPUT_DIR / f"05_투자검토대상군_{REPORT_DATE}_{REPORT_TAG}_시군구.csv"
+REVIEW_GATE_PATH = Path("04_결과/01_리포트_codex/05_투자검토") / f"05_투자검토대상군_{REPORT_DATE}_{REPORT_TAG}_시군구.csv"
 
 
 @dataclass(frozen=True)
@@ -112,7 +112,49 @@ def avoidance_hit_rate(df: pd.DataFrame, n: int = 20) -> float:
 def df_to_code_table(df: pd.DataFrame) -> str:
     if df.empty:
         return "```text\n(비어 있음)\n```"
-    return "```text\n" + df.to_string(index=False) + "\n```"
+    show = df.copy()
+    show = normalize_display_table(show)
+    return "```text\n" + show.to_string(index=False) + "\n```"
+
+
+DISPLAY_COLUMN_MAP = {
+    "저평가가능점수": "가격반영부족가능성점수",
+    "촉매점수": "변화계기점수",
+    "과열가능점수": "과열가능성점수",
+    "미래입주압력_18개월_pct": "기존세대수대비_향후18개월입주예정물량_pct",
+    "completed_unsold_ratio_pct": "준공후미분양비중_pct",
+    "median_peer_gap_pct": "동급생활권가격괴리율_pct",
+    "저평가가능비중_pct": "가격반영부족가능비중_pct",
+    "recent_12m_trades": "최근12개월거래량",
+    "signal_complex_count": "비교단지수",
+}
+
+DISPLAY_TEXT_REPLACEMENTS = [
+    ("우선검토", "우선 매수 검토"),
+    ("우선 검토", "우선 매수 검토"),
+    ("임차 지지 강화", "임차 수요 기반 개선"),
+    ("임차 지지와", "임차 수요 기반과"),
+    ("임차 지지", "임차 수요 기반"),
+    ("전세지지", "전세가율"),
+    ("공급 압박", "공급 부담"),
+]
+
+
+def normalize_display_text(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    text = value
+    for before, after in DISPLAY_TEXT_REPLACEMENTS:
+        text = text.replace(before, after)
+    return text
+
+
+def normalize_display_table(df: pd.DataFrame) -> pd.DataFrame:
+    show = df.rename(columns=DISPLAY_COLUMN_MAP).copy()
+    object_cols = show.select_dtypes(include=["object", "string"]).columns
+    for col in object_cols:
+        show[col] = show[col].map(normalize_display_text)
+    return show
 
 
 REVIEW_GATE_COLUMNS = [
@@ -170,11 +212,11 @@ def build_candidate_reason(row: pd.Series, kind: str) -> str:
         if pd.notna(row.get("trade_recovery_pct")) and row["trade_recovery_pct"] >= 20:
             reasons.append(f"거래회복 {row['trade_recovery_pct']:.1f}%")
         if pd.notna(row.get("jeonse_ratio_pct")) and row["jeonse_ratio_pct"] >= 80:
-            reasons.append(f"전세지지 {row['jeonse_ratio_pct']:.1f}%")
+            reasons.append(f"전세가율 {row['jeonse_ratio_pct']:.1f}%")
         if pd.notna(row.get("미래입주압력_18개월_pct")) and row["미래입주압력_18개월_pct"] <= 2:
-            reasons.append(f"입주압력 낮음 {row['미래입주압력_18개월_pct']:.1f}%")
+            reasons.append(f"입주예정 물량 비율 낮음 {row['미래입주압력_18개월_pct']:.1f}%")
         if pd.notna(row.get("저평가가능점수")) and row["저평가가능점수"] >= 65:
-            reasons.append("저평가 신호")
+            reasons.append("가격 반영 부족 신호")
         if pd.notna(row.get("과열가능점수")) and row["과열가능점수"] < 40:
             reasons.append("과열 낮음")
     elif kind == "undervalued":
@@ -183,29 +225,29 @@ def build_candidate_reason(row: pd.Series, kind: str) -> str:
         if pd.notna(row.get("jeonse_ratio_pct")) and row["jeonse_ratio_pct"] >= 80:
             reasons.append(f"전세가율 높음 {row['jeonse_ratio_pct']:.1f}%")
         if pd.notna(row.get("촉매점수")) and row["촉매점수"] >= 70:
-            reasons.append("촉매 양호")
+            reasons.append("변화 계기 양호")
         if pd.notna(row.get("미래입주압력_18개월_pct")) and row["미래입주압력_18개월_pct"] <= 2:
             reasons.append("공급 부담 낮음")
     elif kind == "observe":
         if pd.notna(row.get("촉매점수")) and row["촉매점수"] >= 70:
-            reasons.append(f"촉매 강함 {row['촉매점수']:.1f}")
+            reasons.append(f"변화 계기 강함 {row['촉매점수']:.1f}")
         if pd.notna(row.get("과열가능점수")) and row["과열가능점수"] >= 60:
             reasons.append(f"과열 경계 {row['과열가능점수']:.1f}")
         if pd.notna(row.get("미래입주압력_18개월_pct")) and row["미래입주압력_18개월_pct"] >= 5:
-            reasons.append(f"입주압력 {row['미래입주압력_18개월_pct']:.1f}%")
+            reasons.append(f"입주예정 물량 비율 {row['미래입주압력_18개월_pct']:.1f}%")
         if pd.notna(row.get("jeonse_ratio_pct")) and row["jeonse_ratio_pct"] < 75:
-            reasons.append(f"전세지지 보통 {row['jeonse_ratio_pct']:.1f}%")
+            reasons.append(f"전세가율 {row['jeonse_ratio_pct']:.1f}%")
     elif kind == "avoid":
         if pd.notna(row.get("과열가능점수")) and row["과열가능점수"] >= 70:
             reasons.append(f"과열 {row['과열가능점수']:.1f}")
         if row.get("예측분류") == "하락":
             reasons.append("하락 분류")
         if pd.notna(row.get("미래입주압력_18개월_pct")) and row["미래입주압력_18개월_pct"] >= 5:
-            reasons.append(f"입주압력 {row['미래입주압력_18개월_pct']:.1f}%")
+            reasons.append(f"입주예정 물량 비율 {row['미래입주압력_18개월_pct']:.1f}%")
         if pd.notna(row.get("completed_unsold_ratio_pct")) and row["completed_unsold_ratio_pct"] >= 60:
             reasons.append(f"준공후미분양비중 {row['completed_unsold_ratio_pct']:.1f}%")
         if pd.notna(row.get("jeonse_ratio_pct")) and row["jeonse_ratio_pct"] < 70:
-            reasons.append(f"전세지지 약함 {row['jeonse_ratio_pct']:.1f}%")
+            reasons.append(f"전세가율 낮음 {row['jeonse_ratio_pct']:.1f}%")
 
     if not reasons:
         fallback_map = {
@@ -217,10 +259,10 @@ def build_candidate_reason(row: pd.Series, kind: str) -> str:
         label_map = {
             "상승확률점수": "상승확률",
             "저평가가능점수": "저평가",
-            "촉매점수": "촉매",
+            "촉매점수": "변화 계기",
             "투자적합성점수": "투자적합성",
             "과열가능점수": "과열",
-            "미래입주압력_18개월_pct": "입주압력",
+            "미래입주압력_18개월_pct": "입주예정 물량 비율",
         }
         for col in fallback_map.get(kind, []):
             value = row.get(col)
@@ -960,6 +1002,7 @@ def render_report(
 - 현재 기준월: `2026-02`
 - 현재 점수는 `기본 정량모델 + 현재 시점 보강 신호`를 합쳐 계산했다.
 - 다만 투자 후보 제시는 방향성 점수만으로 하지 않았다. 단계 7에서 정리한 `투자 검토 대상군 게이트`를 먼저 적용했고, `즉시 제외 / 판단 보류 / 우선 검토`를 분리한 뒤 예측 표를 만들었다.
+- 공개 보고서에서는 단계 7의 `우선 검토`를 `우선 매수 검토 후보군`으로 번역해 읽는다.
 - 호가 데이터는 후보 제외 게이트가 아니라 `급매 확인`, `현재 분위기 점검`, `실제 매수 직전 확인`을 위한 보조지표로만 사용한다.
 - 예측 분류 기준:
   - `상승확률 점수 >= 55`: 상승
@@ -971,7 +1014,7 @@ def render_report(
 ### 2.1 원자료에서 바로 계산한 비율/변화율
 
 - `전세가율(%) = 100 x 전세대표가격 / 매매대표가격`
-  - 의미: 매매가격 대비 전세가격의 비율이다. 높을수록 임차 지지가 강한 쪽으로 읽는다.
+  - 의미: 매매가격 대비 전세가격의 비율이다. 높을수록 임차 수요 기반이 상대적으로 탄탄한 쪽으로 읽는다.
 - `거래회복률(%) = 100 x (최근 6개월 거래건수 / 직전 6개월 거래건수 - 1)`
   - 의미: 최근 거래가 직전 반년보다 얼마나 살아났는지 본다.
 - `기존 세대수 대비 향후 18개월 입주예정 물량(%) = 100 x 향후 18개월 입주예정 세대수 / 기존 세대수`
@@ -995,12 +1038,12 @@ def render_report(
 ### 2.3 합성 점수 산식
 
 - `시장국면점수 = 평균(최근 6개월 가격변화율 역순, 최근 12개월 가격변화율 역순, 거래회복률, 최근 12개월 거래량)`
-- `임차지지점수 = 평균(전세가율, 전세 12개월 변화율, 월세비중 역순)`
+- `임차수요기반점수 = 평균(전세가율, 전세 12개월 변화율, 월세비중 역순)`
 - `공급/미분양점수 = 평균(최근 12개월 공급부담 역순, 미분양/기존세대수 비율 역순, 준공후미분양비중 역순)`
-- `기본상승점수 = 0.40 x 시장국면점수 + 0.35 x 임차지지점수 + 0.25 x 공급/미분양점수`
+- `기본상승점수 = 0.40 x 시장국면점수 + 0.35 x 임차수요기반점수 + 0.25 x 공급/미분양점수`
 - `저평가가능점수 = 평균(저평가가능 비중, 생활권동급 괴리율 역순, 전세가율, 최근 12개월 가격변화율 역순, 호가-실거래 괴리율 역순)`
 - `촉매점수 = 평균(거래회복률, 기존 세대수 대비 향후 18개월 입주예정 물량 역순, 준공후미분양비중 역순, 전세 12개월 변화율, 가격기준 급매비중)`
-- `수익률후보점수 = 평균(전세가율, 절대가격 부담 역순, 기존 세대수 대비 향후 18개월 입주예정 물량 역순, 임차지지점수)`
+- `수익률후보점수 = 평균(전세가율, 절대가격 부담 역순, 기존 세대수 대비 향후 18개월 입주예정 물량 역순, 임차수요기반점수)`
 - `과열가능점수 = 평균(최근 12개월 가격변화율, 호가-실거래 괴리율, 과대반영 비중, 기존 세대수 대비 향후 18개월 입주예정 물량, 전세가율 역순)`
 - `상승확률점수 = 0.70 x 기본상승점수 + 0.15 x 저평가가능점수 + 0.15 x 촉매점수`
 - `투자적합성점수 = 평균(최근 12개월 거래량, 기존 세대수, 매매 평당가)`
@@ -1016,7 +1059,7 @@ def render_report(
 
 - `상승확률점수 70`은 실제 확률 70%라는 뜻이 아니다.
 - `저평가가능점수`는 절대 저평가가 아니라 현재 모델 기준 `조건부 상대가치` 신호다.
-- 보고서 본문에서 `입주압력`이라는 표현을 쓰더라도, 실제 계산값은 `기존 세대수 대비 향후 입주예정 물량 비율`이다.
+- 보고서 본문에서 `입주예정 물량 비율`이라고 줄여 쓰더라도, 실제 계산값은 `기존 세대수 대비 향후 입주예정 물량 비율`이다.
 
 ## 3. 과거 유사 패턴 근거
 
@@ -1024,7 +1067,7 @@ def render_report(
 {similar_lines}
 
 - 해석:
-  - 현재 국면은 `수도권 상대 강세`, `지방 비핵심 공급 부담`, `전세 지지의 지역 차별화`가 동시에 나타나는 구간과 더 가깝다.
+  - 현재 국면은 `수도권 상대 강세`, `지방 비핵심 공급 부담`, `임차 수요 기반의 지역 차별화`가 동시에 나타나는 구간과 더 가깝다.
   - 즉 단순 전면 상승장보다 `확산과 선별이 동시에 진행되는 회복/확산 혼합 구간`으로 읽는 편이 맞다.
 
 ## 4. 백테스트 방식
@@ -1057,26 +1100,26 @@ def render_report(
 
 ### 6.1 상승 후보
 
-- 아래 표는 단계 7에서 `우선 검토`로 분류된 지역 중, `예측분류=상승`이고 과열이 과하지 않은 지역만 포함한다.
+- 아래 표는 단계 7 내부 라벨인 `우선 검토`로 분류된 지역 중, 공개 보고서 기준 `우선 매수 검토` 후보로 먼저 볼 만한 지역만 포함한다.
 - 즉 `태백시`, `익산시`처럼 방향성 점수는 일부 높아도 `즉시 제외`로 분류된 지역은 상승 후보에 넣지 않는다.
 
 {rising_text}
 
 ### 6.2 저평가 가능 후보
 
-- `저평가`는 단순히 `싸 보이는 지역`이 아니라, `우선 검토`를 통과한 지역 중 `비슷한 생활권·시장 규모 대비 덜 반영됐고`, `임차/공급/거래`가 최소한 버텨 주는 곳으로 제한했다.
+- `가격 반영 부족 가능성`은 단순히 `싸 보이는 지역`이 아니라, `우선 매수 검토 후보군`으로 좁힌 지역 중 `비슷한 생활권·시장 규모 대비 덜 반영됐고`, `임차 수요 기반/공급/거래`가 최소한 버텨 주는 곳으로 제한했다.
 
 {undervalued_text}
 
 ### 6.3 관찰 후보
 
-- 관찰 후보는 단계 7에서 `판단 보류`로 분류된 지역 중, 당장 공격적으로 들어가기보다 `촉매는 있으나 아직 확인이 더 필요한 지역`이다.
+- 관찰 후보는 단계 7에서 `판단 보류`로 분류된 지역 중, 당장 매수 우선순위를 높이기보다 `변화 계기는 있으나 아직 확인이 더 필요한 지역`이다.
 
 {observe_text}
 
 ### 6.4 보수·회피 후보
 
-- 아래 지역은 `판단 보류` 군 안에서도 특히 `과열`, `공급 부담`, `준공후 미분양`, `전세 지지 약화`가 커서 더 보수적으로 봐야 하는 곳이다.
+- 아래 지역은 `판단 보류` 군 안에서도 특히 `과열`, `공급 부담`, `준공후 미분양`, `임차 수요 기반 약화`가 커서 더 보수적으로 봐야 하는 곳이다.
 
 {avoid_text}
 
@@ -1123,20 +1166,20 @@ def render_report(
 
 ## 8. 투자자 대응 원칙
 
-- 공격 검토:
+- 우선 매수 검토:
   - 상승확률 점수 `70 이상`
   - 과열 가능 점수 `70 미만`
-  - 미래 입주압력 `상대적으로 낮음`
+  - 기존 세대수 대비 향후 18개월 입주예정 물량 비율 `상대적으로 낮음`
 - 관찰 유지:
   - 상승확률은 높지 않지만 촉매 점수가 높은 후보
   - 정책/공급 변수에 따라 위아래가 갈릴 후보
 - 보수 접근:
-  - 상승확률 `45~69`이고 미래 입주압력이 높은 곳
-  - 전세 지지가 약한 곳
+  - 상승확률 `45~69`이고 기존 세대수 대비 향후 18개월 입주예정 물량 비율이 높은 곳
+  - 임차 수요 기반이 약한 곳
 - 회피 우선:
   - 과열 가능 점수 높음
   - 준공후 미분양 비중 높음
-  - 미래 입주압력 높음
+  - 기존 세대수 대비 향후 18개월 입주예정 물량 비율 높음
 
 ## 9. 신뢰도와 해석 한계
 
