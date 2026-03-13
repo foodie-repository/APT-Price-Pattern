@@ -9,11 +9,15 @@
 - `04_공급`: 공급 관련 분석 보고서
 - `05_투자검토`: 투자 검토 대상군, 후보 목록 게이트
 - `06_예측검증`: 예측 점수, 과거 데이터 검증, 유사국면, 예측·검증 보고서
+- `07_투자판단`: 최종 통합 보고서, shortlist, 질문응답형 투자 멘토 노트
 - `90_archive`: 구버전 보고서 보관
 
 빠른 진입 경로:
 
+- 최종 통합 보고서: [07_최종통합보고서_20260314_codex.md](./07_%ED%88%AC%EC%9E%90%ED%8C%90%EB%8B%A8/01_%EC%B5%9C%EC%A2%85%ED%86%B5%ED%95%A9%EB%B3%B4%EA%B3%A0%EC%84%9C/07_%EC%B5%9C%EC%A2%85%ED%86%B5%ED%95%A9%EB%B3%B4%EA%B3%A0%EC%84%9C_20260314_codex.md)
+- 투자판단/Q&A: [00_README.md](./07_%ED%88%AC%EC%9E%90%ED%8C%90%EB%8B%A8/00_README.md)
 - 방법론: [00_통합분석방법론_20260311_codex.md](./00_%EA%B3%B5%ED%86%B5/00_%ED%86%B5%ED%95%A9%EB%B6%84%EC%84%9D%EB%B0%A9%EB%B2%95%EB%A1%A0_20260311_codex.md)
+- 장기 패턴 라이브러리: [00_장기패턴라이브러리_20260314_codex.md](./00_%EA%B3%B5%ED%86%B5/00_%EC%9E%A5%EA%B8%B0%ED%8C%A8%ED%84%B4%EB%9D%BC%EC%9D%B4%EB%B8%8C%EB%9F%AC%EB%A6%AC_20260314_codex.md)
 - 매매 최신: [01_매매시장분석_20260314_codex_전국커버판.md](./01_%EB%A7%A4%EB%A7%A4%EC%8B%9C%EC%9E%A5/01_%EB%A7%A4%EB%A7%A4%EC%8B%9C%EC%9E%A5%EB%B6%84%EC%84%9D_20260314_codex_%EC%A0%84%EA%B5%AD%EC%BB%A4%EB%B2%84%ED%8C%90.md)
 - 임차 최신: [02_임차시장분석_20260314_codex_전국커버판.md](./02_%EC%9E%84%EC%B0%A8%EC%8B%9C%EC%9E%A5/02_%EC%9E%84%EC%B0%A8%EC%8B%9C%EC%9E%A5%EB%B6%84%EC%84%9D_20260314_codex_%EC%A0%84%EA%B5%AD%EC%BB%A4%EB%B2%84%ED%8C%90.md)
 - 정책 최신: [03_정책영향분석_20260314_codex_전국커버판.md](./03_%EC%A0%95%EC%B1%85%EC%98%81%ED%96%A5/03_%EC%A0%95%EC%B1%85%EC%98%81%ED%96%A5%EB%B6%84%EC%84%9D_20260314_codex_%EC%A0%84%EA%B5%AD%EC%BB%A4%EB%B2%84%ED%8C%90.md)
