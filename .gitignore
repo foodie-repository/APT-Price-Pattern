@@ -1,0 +1,10 @@
+.DS_Store
+.env
+.venv/
+.uv-cache/
+.python-version
+.claude/
+__pycache__/
+*.pyc
+*.duckdb
+*.duckdb-wal
