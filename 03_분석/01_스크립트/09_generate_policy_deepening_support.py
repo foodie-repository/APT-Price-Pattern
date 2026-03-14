@@ -317,7 +317,7 @@ def build_recovery_candidates(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     investment["broad"] = investment["시군구_상위"].fillna(investment["시군구"])
     merged = sale_action.merge(
         lease_validation[
-            ["시도", "시군구", "임차수요기반양호", "월세화경계", "임차선행", "기다림필요", "임차검증메모"]
+            ["시도", "시군구", "임차수요기반양호", "월세비중높음", "임차선행", "기다림필요", "임차검증메모"]
         ],
         on=["시도", "시군구"],
         how="left",
@@ -355,7 +355,7 @@ def build_recovery_candidates(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     low_completed_unsold = merged["completed_unsold_ratio_pct"].fillna(0) <= 0.08
     supply_risk = merged["정책메모"].fillna("").str.contains("공급 부담")
     direct_reg_risk = merged["토허활성여부"] == "예"
-    monthly_caution = merged["월세화경계"] == "예"
+    monthly_caution = merged["월세비중높음"] == "예"
     lease_lead = merged["임차선행"] == "예"
     price_change = merged["price_12m_change_pct"]
     trade_recovery = merged["trade_recovery_pct_sale"].fillna(merged["trade_recovery_pct_cand"])
@@ -371,7 +371,7 @@ def build_recovery_candidates(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
     merged.loc[
         (merged["심화행동라벨"] == "우선 매수 검토")
         & (merged["임차수요기반양호"] == "예")
-        & (merged["월세화경계"] != "예")
+        & (merged["월세비중높음"] != "예")
         & low_completed_unsold
         & (~direct_reg_risk),
         "정책후판정",
@@ -414,9 +414,9 @@ def build_recovery_candidates(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         if pd.isna(trade_recovery):
             trade_recovery = row.get("trade_recovery_pct_cand")
         if row.get("정책후판정") == "정책 민감 관찰 후보":
-            if row.get("월세화경계") == "예" and row.get("임차선행") == "예":
+            if row.get("월세비중높음") == "예" and row.get("임차선행") == "예":
                 return "비토허 투자수요·임차선행 관찰형"
-            if row.get("월세화경계") == "예":
+            if row.get("월세비중높음") == "예":
                 return "비토허 투자수요 유입 관찰형"
             if row.get("임차선행") == "예":
                 return "임차 선행 관찰형"
@@ -424,9 +424,9 @@ def build_recovery_candidates(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         if row.get("정책후판정") == "정책 해석 주의":
             if pd.notna(price_change) and price_change > 0 and pd.notna(trade_recovery) and trade_recovery <= 0:
                 return "가격 반영 대비 거래 회복 지연형"
-            if pd.notna(price_change) and price_change > 0 and row.get("월세화경계") == "예":
+            if pd.notna(price_change) and price_change > 0 and row.get("월세비중높음") == "예":
                 return "가격 선반영 후 임차 구조 점검형"
-            return "월세화 해석 주의형"
+            return "월세 구조 해석 주의형"
         if row.get("정책후판정") != "정책 리스크 경계":
             return ""
         if row.get("토허활성여부") == "예":
@@ -434,7 +434,7 @@ def build_recovery_candidates(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         if isinstance(row.get("정책메모"), str) and "공급 부담" in row["정책메모"]:
             return "공급 부담 우선 점검형"
         if pd.notna(row.get("completed_unsold_ratio_pct")) and row["completed_unsold_ratio_pct"] >= 0.2:
-            return "미분양·월세화 동시 점검형"
+            return "미분양·월세 구조 동시 점검형"
         if row.get("심화행동라벨") == "회피":
             return "시장 규모·출구 점검형"
         return "정책 리스크 점검형"
@@ -453,8 +453,8 @@ def build_recovery_candidates(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
             parts.append("임차 수요 기반 양호")
         if row.get("임차선행") == "예":
             parts.append("임차 선행")
-        if row.get("월세화경계") == "예":
-            parts.append("월세화 경계")
+        if row.get("월세비중높음") == "예":
+            parts.append("월세 비중 높음")
         return ", ".join(parts)
 
     merged["정책세부유형"] = merged.apply(build_policy_subtype, axis=1)
@@ -471,7 +471,7 @@ def build_recovery_candidates(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         "정책메모",
         "토허활성여부",
         "임차수요기반양호",
-        "월세화경계",
+        "월세비중높음",
         "임차선행",
         "broad",
         "completed_unsold",

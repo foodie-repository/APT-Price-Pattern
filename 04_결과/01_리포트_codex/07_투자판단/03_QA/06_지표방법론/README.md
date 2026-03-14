@@ -9,4 +9,4 @@
 
 ## 질문 기록
 
-아직 기록 없음.
+- [Q-METHOD-001_전세와월세를구분해보는이유.md](./Q-METHOD-001_%EC%A0%84%EC%84%B8%EC%99%80%EC%9B%94%EC%84%B8%EB%A5%BC%EA%B5%AC%EB%B6%84%ED%95%B4%EB%B3%B4%EB%8A%94%EC%9D%B4%EC%9C%A0.md)

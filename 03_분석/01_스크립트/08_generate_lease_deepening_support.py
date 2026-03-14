@@ -245,7 +245,7 @@ def build_validation_frame(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         "예",
         "아니오",
     )
-    merged["월세화경계"] = np.where(merged["recent_wolse_share_3m"] >= 40, "예", "아니오")
+    merged["월세비중높음"] = np.where(merged["recent_wolse_share_3m"] >= 40, "예", "아니오")
     merged["임차선행"] = np.where(
         (merged["lead_lag_months"] <= 0) & (merged["recent_jeonse_ratio_3m"] >= 60),
         "예",
@@ -270,8 +270,8 @@ def build_validation_frame(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
                 reasons.append(f"매매가 전세보다 {int(row['lead_lag_months'])}개월 선행")
             else:
                 reasons.append("전세와 매매 전환 시점이 거의 동시")
-        if row["월세화경계"] == "예":
-            reasons.append("월세화 경계")
+        if row["월세비중높음"] == "예":
+            reasons.append("월세 비중 높음")
         if row["임차수요기반양호"] == "예":
             reasons.append("임차 수요 기반 양호")
         if row["임차선행"] == "예":
@@ -296,7 +296,7 @@ def build_validation_frame(con: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         "jeonse_turn_ym",
         "lead_lag_months",
         "임차수요기반양호",
-        "월세화경계",
+        "월세비중높음",
         "임차선행",
         "기다림필요",
         "임차검증메모",
@@ -317,10 +317,10 @@ def build_type_frame(validation: pd.DataFrame) -> pd.DataFrame:
                     "근거": row.임차검증메모,
                 }
             )
-        if row.월세화경계 == "예":
+        if row.월세비중높음 == "예":
             records.append(
                 {
-                    "구분": "월세화 리스크 큰 지역",
+                    "구분": "월세 비중 높아 해석 주의 지역",
                     "시도": row.시도,
                     "시군구": row.시군구,
                     "심화행동라벨": row.심화행동라벨,

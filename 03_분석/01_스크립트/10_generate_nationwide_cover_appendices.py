@@ -40,7 +40,7 @@ def build_lease_summaries(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]
             .agg(
                 지역수=("시군구", "count"),
                 임차수요기반양호_지역수=("임차수요기반양호", lambda s: int((s == "예").sum())),
-                월세화경계_지역수=("월세화경계", lambda s: int((s == "예").sum())),
+                월세비중높음_지역수=("월세비중높음", lambda s: int((s == "예").sum())),
                 임차선행_지역수=("임차선행", lambda s: int((s == "예").sum())),
                 기다림필요_지역수=("기다림필요", lambda s: int((s == "예").sum())),
                 평균전세가율=("recent_jeonse_ratio_3m", "mean"),
@@ -153,7 +153,7 @@ def main() -> None:
             "recent_wolse_share_3m",
             "lead_lag_months",
             "임차수요기반양호",
-            "월세화경계",
+            "월세비중높음",
             "임차선행",
             "기다림필요",
         ]
@@ -171,7 +171,7 @@ def main() -> None:
             "심화행동라벨",
             "토허활성여부",
             "completed_unsold_ratio_pct",
-            "월세화경계",
+            "월세비중높음",
             "임차선행",
             "정책판정메모",
         ]
